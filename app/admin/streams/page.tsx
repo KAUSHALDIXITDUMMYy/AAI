@@ -31,10 +31,26 @@ import {
   type Stream,
   type UserProfile,
 } from "@/lib/auth"
-import { generateAgoraToken, createChannelName } from "@/lib/agora"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Plus, Edit, Trash2, Users, Radio } from "lucide-react"
+
+// Client-side only Agora functions
+const generateAgoraToken = async (channelName: string, uid: number, role: string) => {
+  // This will only run on client side
+  if (typeof window === 'undefined') return ''
+  
+  const { generateAgoraToken: generateToken } = await import('@/lib/agora')
+  return generateToken(channelName, uid, role)
+}
+
+const createChannelName = (prefix: string) => {
+  // Simple client-side channel name creation
+  if (typeof window === 'undefined') return `${prefix}_${Date.now()}`
+  
+  const { createChannelName: createChannel } = await import('@/lib/agora')
+  return createChannel(prefix)
+}
 
 export default function StreamsPage() {
   const router = useRouter()
@@ -88,8 +104,8 @@ export default function StreamsPage() {
           description: "Stream updated successfully",
         })
       } else {
-        // Create new stream
-        const channelName = createChannelName("new_stream")
+        // Create new stream - only generate token on client side
+        const channelName = await createChannelName("new_stream")
         const token = await generateAgoraToken(channelName, 1, "publisher")
 
         await createStream({
