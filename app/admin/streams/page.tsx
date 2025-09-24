@@ -44,7 +44,7 @@ const generateAgoraToken = async (channelName: string, uid: number, role: string
   return generateToken(channelName, uid, role)
 }
 
-const createChannelName = (prefix: string) => {
+ const createChannelName = async (prefix: string) => {
   // Simple client-side channel name creation
   if (typeof window === 'undefined') return `${prefix}_${Date.now()}`
   
