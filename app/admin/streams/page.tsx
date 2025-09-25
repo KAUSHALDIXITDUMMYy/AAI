@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { useRouter } from "next/navigation"
-
 import { useEffect, useState } from "react"
 import AdminLayout from "@/components/admin/admin-layout"
 import { Button } from "@/components/ui/button"
@@ -35,7 +34,25 @@ import {
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Plus, Edit, Trash2, Users, Radio, Mic, MicOff, Square, Monitor, MonitorOff, Play, Settings } from "lucide-react"
-import StreamBroadcaster from "@/components/admin/stream-broadcaster"
+import dynamic from "next/dynamic"
+
+// Dynamically import StreamBroadcaster with no SSR
+const StreamBroadcaster = dynamic(() => import("@/components/admin/stream-broadcaster"), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardHeader>
+        <CardTitle>Loading Stream...</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="animate-pulse">
+          <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+})
 
 // Client-side only Agora functions
 const generateAgoraToken = async (channelName: string, uid: number, role: "publisher" | "subscriber") => {
@@ -46,7 +63,7 @@ const generateAgoraToken = async (channelName: string, uid: number, role: "publi
   return generateToken(channelName, uid, role)
 }
 
- const createChannelName = async (prefix: string) => {
+const createChannelName = async (prefix: string) => {
   // Simple client-side channel name creation
   if (typeof window === 'undefined') return `${prefix}_${Date.now()}`
   
@@ -107,7 +124,7 @@ export default function StreamsPage() {
 
     try {
       if (editingStream) {
-        // Update existing stream
+        // Update existing stream - no Agora token generation needed for updates
         await updateStream(editingStream.id, formData)
         toast({
           title: "Success",
