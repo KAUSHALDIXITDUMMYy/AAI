@@ -5,7 +5,7 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
 import type { User } from "firebase/auth"
 import { auth } from "@/lib/firebase"
-import { getUserProfile, type UserProfile } from "@/lib/auth"
+import { getUserProfile, subscribeToUserProfile, type UserProfile } from "@/lib/auth"
 
 interface AuthContextType {
   user: User | null
@@ -33,25 +33,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let unsubscribeProfile: (() => void) | null = null
+
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       setUser(user)
 
       if (user) {
         try {
+          // First get initial profile
           const userProfile = await getUserProfile(user.uid)
           setProfile(userProfile)
+          
+          // Then set up real-time listener for profile updates
+          unsubscribeProfile = subscribeToUserProfile(user.uid, (updatedProfile) => {
+            setProfile(updatedProfile)
+          })
         } catch (error) {
           console.error("Error fetching user profile:", error)
           setProfile(null)
         }
       } else {
         setProfile(null)
+        if (unsubscribeProfile) {
+          unsubscribeProfile()
+          unsubscribeProfile = null
+        }
       }
 
       setLoading(false)
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (unsubscribeProfile) {
+        unsubscribeProfile()
+      }
+    }
   }, [])
 
   return <AuthContext.Provider value={{ user, profile, loading }}>{children}</AuthContext.Provider>

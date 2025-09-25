@@ -11,6 +11,8 @@ import {
   getDocs,
   query,
   where,
+  onSnapshot,
+  Unsubscribe,
 } from "firebase/firestore"
 
 export interface UserProfile {
@@ -185,4 +187,48 @@ export const assignStreamToSubscribers = async (streamId: string, subscriberIds:
   } catch (error) {
     throw error
   }
+}
+
+// Real-time listener functions
+export const subscribeToUserProfile = (
+  userId: string,
+  callback: (profile: UserProfile | null) => void
+): Unsubscribe => {
+  return onSnapshot(doc(db, "users", userId), (doc) => {
+    if (doc.exists()) {
+      callback({ id: doc.id, ...doc.data() } as UserProfile)
+    } else {
+      callback(null)
+    }
+  })
+}
+
+export const subscribeToAssignedStreams = (
+  streamIds: string[],
+  callback: (streams: Stream[]) => void
+): Unsubscribe => {
+  if (streamIds.length === 0) {
+    callback([])
+    return () => {}
+  }
+
+  const q = query(collection(db, "streams"), where("__name__", "in", streamIds))
+  
+  return onSnapshot(q, (querySnapshot) => {
+    const streams = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Stream))
+    callback(streams)
+  })
+}
+
+export const subscribeToStream = (
+  streamId: string,
+  callback: (stream: Stream | null) => void
+): Unsubscribe => {
+  return onSnapshot(doc(db, "streams", streamId), (doc) => {
+    if (doc.exists()) {
+      callback({ id: doc.id, ...doc.data() } as Stream)
+    } else {
+      callback(null)
+    }
+  })
 }

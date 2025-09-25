@@ -7,7 +7,7 @@ import SubscriberLayout from "@/components/subscriber/subscriber-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getStreamById, type Stream } from "@/lib/auth"
+import { useRealtimeStream } from "@/hooks/use-realtime-streams"
 import { AgoraManager, generateAgoraToken } from "@/lib/agora"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Volume2, VolumeX, Radio, Users } from "lucide-react"
@@ -16,8 +16,7 @@ export default function StreamPage() {
   const params = useParams()
   const router = useRouter()
   const { profile } = useAuth()
-  const [stream, setStream] = useState<Stream | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { stream, loading } = useRealtimeStream(params.id as string)
   const [isConnected, setIsConnected] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [connectionState, setConnectionState] = useState("DISCONNECTED")
@@ -40,47 +39,19 @@ export default function StreamPage() {
   }, [])
 
   useEffect(() => {
-    const fetchStream = async () => {
-      try {
-        const streamData = await getStreamById(streamId)
-        if (!streamData) {
-          toast({
-            title: "Stream not found",
-            description: "The requested stream could not be found",
-            variant: "destructive",
-          })
-          router.push("/subscriber")
-          return
-        }
-
-        // Check if user has access to this stream
-        if (!profile?.assignedStreams?.includes(streamId)) {
-          toast({
-            title: "Access denied",
-            description: "You don't have access to this stream",
-            variant: "destructive",
-          })
-          router.push("/subscriber")
-          return
-        }
-
-        setStream(streamData)
-      } catch (error) {
+    if (!loading && stream && profile) {
+      // Check if user has access to this stream
+      if (!profile.assignedStreams?.includes(streamId)) {
         toast({
-          title: "Error",
-          description: "Failed to load stream",
+          title: "Access denied",
+          description: "You don't have access to this stream",
           variant: "destructive",
         })
         router.push("/subscriber")
-      } finally {
-        setLoading(false)
+        return
       }
     }
-
-    if (profile) {
-      fetchStream()
-    }
-  }, [streamId, profile, router, toast])
+  }, [stream, loading, profile, streamId, router, toast])
 
   const handleConnect = async () => {
     if (!stream?.isActive || !agoraManagerRef.current) {
@@ -168,7 +139,7 @@ export default function StreamPage() {
     )
   }
 
-  if (!stream) {
+  if (!loading && !stream) {
     return (
       <SubscriberLayout title="Stream Not Found">
         <Card>
@@ -183,7 +154,7 @@ export default function StreamPage() {
   }
 
   return (
-    <SubscriberLayout title={stream.title}>
+    <SubscriberLayout title={stream?.title || "Stream"}>
       <div className="space-y-6">
         <div className="flex items-center space-x-4">
           <Button variant="outline" onClick={() => router.push("/subscriber")}>
@@ -201,9 +172,15 @@ export default function StreamPage() {
                     <CardTitle className="text-2xl">{stream.title}</CardTitle>
                     <CardDescription className="mt-2">{stream.description}</CardDescription>
                   </div>
-                  <Badge variant={stream.isActive ? "default" : "secondary"} className="ml-4">
-                    {stream.isActive ? "Live" : "Offline"}
-                  </Badge>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={stream.isActive ? "default" : "secondary"}>
+                      {stream.isActive ? "Live" : "Offline"}
+                    </Badge>
+                    <div className="flex items-center space-x-1 text-xs text-green-600">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                      <span>Live</span>
+                    </div>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>

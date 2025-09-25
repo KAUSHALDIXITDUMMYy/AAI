@@ -3,6 +3,7 @@ import AgoraRTC, {
   type IAgoraRTCRemoteUser,
   type IMicrophoneAudioTrack,
   type ILocalVideoTrack,
+  type ILocalAudioTrack,
 } from "agora-rtc-sdk-ng"
 
 export const AGORA_CONFIG = {
@@ -53,17 +54,36 @@ export const createChannelName = (streamId: string) => {
 export class AgoraManager {
   private client: IAgoraRTCClient
   private localAudioTrack: IMicrophoneAudioTrack | null = null
-  private localScreenTrack: ILocalVideoTrack | null = null
+  private localScreenTrack: ILocalVideoTrack | [ILocalVideoTrack, ILocalAudioTrack] | null = null
   private isJoined = false
   private isScreenSharing = false
+  private channelName: string = ""
+  private uid: number = 0
 
   constructor() {
     this.client = createAgoraClient()
+    // Set up event listeners for connection state changes
+    this.client.on("connection-state-change", (newState, reason) => {
+      console.log(`Connection state changed to ${newState}, reason: ${reason}`)
+    })
+    
+    // Set up event listeners for user events
+    this.client.on("user-joined", (user) => {
+      console.log(`User ${user.uid} joined`)
+    })
+    
+    this.client.on("user-left", (user) => {
+      console.log(`User ${user.uid} left`)
+    })
   }
 
   // Join channel as broadcaster (admin)
   async joinAsBroadcaster(channelName: string, token: string, uid = 0) {
     try {
+      // Store channel info
+      this.channelName = channelName
+      this.uid = uid
+      
       await this.client.join(AGORA_CONFIG.appId, channelName, token, uid)
       this.isJoined = true
 
@@ -90,8 +110,6 @@ export class AgoraManager {
       this.localScreenTrack = await AgoraRTC.createScreenVideoTrack(
         {
           encoderConfig: "1080p_1",
-          // Enable system audio capture
-          withAudio: "enable",
         },
         "enable",
       )
@@ -126,7 +144,7 @@ export class AgoraManager {
         await this.client.unpublish([screenVideoTrack, screenAudioTrack])
         screenVideoTrack.close()
         screenAudioTrack.close()
-      } else {
+      } else if (this.localScreenTrack) {
         await this.client.unpublish([this.localScreenTrack])
         this.localScreenTrack.close()
       }
@@ -213,5 +231,22 @@ export class AgoraManager {
   // Get remote users
   getRemoteUsers() {
     return this.client.remoteUsers
+  }
+
+  // Get current channel info
+  getChannelInfo() {
+    return {
+      channelName: this.channelName,
+      uid: this.uid,
+      isJoined: this.isJoined,
+      isScreenSharing: this.isScreenSharing,
+      remoteUsers: this.client.remoteUsers.length,
+      connectionState: this.client.connectionState
+    }
+  }
+
+  // Check if currently streaming
+  isStreaming() {
+    return this.isJoined && this.localAudioTrack && !this.localAudioTrack.muted
   }
 }

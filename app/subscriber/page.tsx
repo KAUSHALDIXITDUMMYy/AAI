@@ -6,43 +6,17 @@ import SubscriberLayout from "@/components/subscriber/subscriber-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getStreamById, type Stream } from "@/lib/auth"
+import { useRealtimeAssignedStreams } from "@/hooks/use-realtime-streams"
+import { type Stream } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Radio, Clock, Play } from "lucide-react"
 
 export default function SubscriberDashboard() {
   const { profile } = useAuth()
-  const [assignedStreams, setAssignedStreams] = useState<Stream[]>([])
-  const [loading, setLoading] = useState(true)
+  const { streams: assignedStreams, loading } = useRealtimeAssignedStreams(profile?.assignedStreams || [])
   const { toast } = useToast()
   const router = useRouter()
-
-  useEffect(() => {
-    const fetchAssignedStreams = async () => {
-      if (!profile?.assignedStreams) {
-        setLoading(false)
-        return
-      }
-
-      try {
-        const streamPromises = profile.assignedStreams.map((streamId) => getStreamById(streamId))
-        const streams = await Promise.all(streamPromises)
-        const validStreams = streams.filter((stream): stream is Stream => stream !== null)
-        setAssignedStreams(validStreams)
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch your assigned streams",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchAssignedStreams()
-  }, [profile, toast])
 
   const handleJoinStream = (stream: Stream) => {
     if (!stream.isActive) {
@@ -108,7 +82,13 @@ export default function SubscriberDashboard() {
         </div>
 
         <div>
-          <h2 className="text-2xl font-bold mb-4">Your Assigned Streams</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold">Your Assigned Streams</h2>
+            <div className="flex items-center space-x-2 text-sm text-green-600">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>Live Updates</span>
+            </div>
+          </div>
           {assignedStreams.length === 0 ? (
             <Card>
               <CardContent className="text-center py-12">
