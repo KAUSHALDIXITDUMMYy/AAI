@@ -145,7 +145,9 @@ export default function SubscribersPage() {
               <DialogHeader>
                 <DialogTitle>{editingSubscriber ? "Edit Subscriber" : "Create New Subscriber"}</DialogTitle>
                 <DialogDescription>
-                  {editingSubscriber ? "Update the subscriber information" : "Add a new subscriber to the platform"}
+                  {editingSubscriber 
+                    ? "Update the subscriber information" 
+                    : "Add a new subscriber to the platform. The subscriber will be created in the database and will need to log in to activate their account."}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -194,6 +196,7 @@ export default function SubscribersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Email</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Joined Date</TableHead>
                   <TableHead>Assigned Streams</TableHead>
                   <TableHead>Actions</TableHead>
@@ -203,6 +206,15 @@ export default function SubscribersPage() {
                 {subscribers.map((subscriber) => (
                   <TableRow key={subscriber.id}>
                     <TableCell className="font-medium">{subscriber.email}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        subscriber.pendingAuth 
+                          ? 'bg-yellow-100 text-yellow-800' 
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        {subscriber.pendingAuth ? 'Pending Login' : 'Active'}
+                      </span>
+                    </TableCell>
                     <TableCell>{new Date(subscriber.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>{subscriber.assignedStreams?.length || 0}</TableCell>
                     <TableCell>
@@ -224,7 +236,7 @@ export default function SubscribersPage() {
                 ))}
                 {subscribers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-gray-500 py-8">
+                    <TableCell colSpan={5} className="text-center text-gray-500 py-8">
                       No subscribers found. Create your first subscriber to get started.
                     </TableCell>
                   </TableRow>

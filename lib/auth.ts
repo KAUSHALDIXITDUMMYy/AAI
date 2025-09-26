@@ -16,9 +16,11 @@ import {
 export interface UserProfile {
   id: string
   email: string
+  password?: string // Optional for existing users, required for new subscribers
   role: "admin" | "subscriber"
   createdAt: Date
   assignedStreams?: string[]
+  pendingAuth?: boolean // Flag to indicate if Firebase Auth user needs to be created
 }
 
 export interface Stream {
@@ -36,16 +38,75 @@ export interface Stream {
 // Auth functions
 export const loginUser = async (email: string, password: string) => {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password)
-    const userDoc = await getDoc(doc(db, "users", userCredential.user.uid))
-
-    if (!userDoc.exists()) {
-      throw new Error("User profile not found")
+    // First, check if user exists in database
+    const q = query(collection(db, "users"), where("email", "==", email))
+    const querySnapshot = await getDocs(q)
+    
+    if (querySnapshot.empty) {
+      throw new Error("User not found")
     }
 
-    return {
-      user: userCredential.user,
-      profile: { id: userDoc.id, ...userDoc.data() } as UserProfile,
+    const userDoc = querySnapshot.docs[0]
+    const userProfile = { id: userDoc.id, ...userDoc.data() } as UserProfile
+
+    // If this is a subscriber with pendingAuth, create Firebase Auth user
+    if (userProfile.role === "subscriber" && userProfile.pendingAuth) {
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+        
+        // Update the database record with the Firebase Auth UID and remove password
+        await updateDoc(doc(db, "users", userDoc.id), {
+          id: userCredential.user.uid,
+          pendingAuth: false,
+          password: null, // Remove password from database
+        })
+
+        // Update the profile object
+        userProfile.id = userCredential.user.uid
+        userProfile.pendingAuth = false
+        delete userProfile.password
+
+        return {
+          user: userCredential.user,
+          profile: userProfile,
+        }
+      } catch (authError: any) {
+        // If Firebase Auth creation fails, check if it's because user already exists
+        if (authError.code === 'auth/email-already-in-use') {
+          // Try to sign in with existing credentials
+          const userCredential = await signInWithEmailAndPassword(auth, email, password)
+          
+          // Update the database record
+          await updateDoc(doc(db, "users", userDoc.id), {
+            id: userCredential.user.uid,
+            pendingAuth: false,
+            password: null,
+          })
+
+          userProfile.id = userCredential.user.uid
+          userProfile.pendingAuth = false
+          delete userProfile.password
+
+          return {
+            user: userCredential.user,
+            profile: userProfile,
+          }
+        }
+        throw authError
+      }
+    } else {
+      // For existing users or admins, use normal sign in
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      
+      // Verify the user ID matches
+      if (userProfile.id !== userCredential.user.uid) {
+        throw new Error("User ID mismatch")
+      }
+
+      return {
+        user: userCredential.user,
+        profile: userProfile,
+      }
     }
   } catch (error) {
     throw error
@@ -59,16 +120,18 @@ export const logoutUser = async () => {
 // User CRUD operations
 export const createSubscriber = async (email: string, password: string) => {
   try {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+    // Only create database record, don't create Firebase Auth user yet
     const userProfile: Omit<UserProfile, "id"> = {
       email,
+      password, // Store password temporarily for first login
       role: "subscriber",
       createdAt: new Date(),
       assignedStreams: [],
+      pendingAuth: true, // Mark that Firebase Auth user needs to be created
     }
 
-    await setDoc(doc(db, "users", userCredential.user.uid), userProfile)
-    return { id: userCredential.user.uid, ...userProfile }
+    const docRef = await addDoc(collection(db, "users"), userProfile)
+    return { id: docRef.id, ...userProfile }
   } catch (error) {
     throw error
   }
@@ -76,10 +139,21 @@ export const createSubscriber = async (email: string, password: string) => {
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
   try {
+    // First try to get by document ID (for new subscribers)
     const userDoc = await getDoc(doc(db, "users", userId))
     if (userDoc.exists()) {
       return { id: userDoc.id, ...userDoc.data() } as UserProfile
     }
+    
+    // If not found by document ID, try to find by Firebase UID in the id field
+    const q = query(collection(db, "users"), where("id", "==", userId))
+    const querySnapshot = await getDocs(q)
+    
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0]
+      return { id: userDoc.id, ...userDoc.data() } as UserProfile
+    }
+    
     return null
   } catch (error) {
     throw error

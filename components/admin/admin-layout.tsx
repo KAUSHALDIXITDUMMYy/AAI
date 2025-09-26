@@ -15,9 +15,18 @@ interface AdminLayoutProps {
 }
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
-  const { profile } = useAuth()
+  const { profile, loading } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
+
+  // Show loading state while auth is being determined
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
 
   const handleLogout = async () => {
     try {
@@ -36,7 +45,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
     }
   }
 
-  if (profile?.role !== "admin") {
+  if (!profile || profile.role !== "admin") {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card>
@@ -45,6 +54,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </CardHeader>
           <CardContent>
             <p>You don't have permission to access the admin panel.</p>
+            <p className="text-sm text-gray-500 mt-2">
+              Profile: {profile ? `${profile.email} (${profile.role})` : 'Not loaded'}
+            </p>
             <Button onClick={() => router.push("/login")} className="mt-4">
               Go to Login
             </Button>
