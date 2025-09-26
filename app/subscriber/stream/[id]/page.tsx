@@ -11,6 +11,8 @@ import { getStreamById, type Stream } from "@/lib/auth"
 import { AgoraManager, generateAgoraToken } from "@/lib/agora"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Volume2, VolumeX, Radio, Users } from "lucide-react"
+import { db } from "@/lib/firebase"
+import { doc, onSnapshot } from "firebase/firestore"
 
 export default function StreamPage() {
   const params = useParams()
@@ -40,45 +42,50 @@ export default function StreamPage() {
   }, [])
 
   useEffect(() => {
-    const fetchStream = async () => {
-      try {
-        const streamData = await getStreamById(streamId)
-        if (!streamData) {
+    if (!profile) return
+
+    // Check if user has access to this stream
+    if (!profile.assignedStreams?.includes(streamId)) {
+      toast({
+        title: "Access denied",
+        description: "You don't have access to this stream",
+        variant: "destructive",
+      })
+      router.push("/subscriber")
+      return
+    }
+
+    // Set up real-time listener for stream changes
+    const unsubscribeStream = onSnapshot(
+      doc(db, "streams", streamId),
+      (doc) => {
+        if (doc.exists()) {
+          const streamData = { id: doc.id, ...doc.data() } as Stream
+          setStream(streamData)
+        } else {
           toast({
             title: "Stream not found",
             description: "The requested stream could not be found",
             variant: "destructive",
           })
           router.push("/subscriber")
-          return
         }
-
-        // Check if user has access to this stream
-        if (!profile?.assignedStreams?.includes(streamId)) {
-          toast({
-            title: "Access denied",
-            description: "You don't have access to this stream",
-            variant: "destructive",
-          })
-          router.push("/subscriber")
-          return
-        }
-
-        setStream(streamData)
-      } catch (error) {
+        setLoading(false)
+      },
+      (error) => {
+        console.error("Error listening to stream changes:", error)
         toast({
           title: "Error",
           description: "Failed to load stream",
           variant: "destructive",
         })
         router.push("/subscriber")
-      } finally {
         setLoading(false)
       }
-    }
+    )
 
-    if (profile) {
-      fetchStream()
+    return () => {
+      unsubscribeStream()
     }
   }, [streamId, profile, router, toast])
 

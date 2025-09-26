@@ -10,6 +10,8 @@ import { getStreamById, type Stream } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Radio, Clock, Play } from "lucide-react"
+import { db } from "@/lib/firebase"
+import { doc, onSnapshot, collection, query, where, getDocs } from "firebase/firestore"
 
 export default function SubscriberDashboard() {
   const { profile } = useAuth()
@@ -19,30 +21,82 @@ export default function SubscriberDashboard() {
   const router = useRouter()
 
   useEffect(() => {
-    const fetchAssignedStreams = async () => {
-      if (!profile?.assignedStreams) {
-        setLoading(false)
-        return
-      }
-
-      try {
-        const streamPromises = profile.assignedStreams.map((streamId) => getStreamById(streamId))
-        const streams = await Promise.all(streamPromises)
-        const validStreams = streams.filter((stream): stream is Stream => stream !== null)
-        setAssignedStreams(validStreams)
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to fetch your assigned streams",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
-      }
+    if (!profile?.id) {
+      setLoading(false)
+      return
     }
 
-    fetchAssignedStreams()
-  }, [profile, toast])
+    // Set up real-time listener for user profile changes (new assigned streams)
+    const unsubscribeProfile = onSnapshot(
+      doc(db, "users", profile.id),
+      async (doc) => {
+        if (doc.exists()) {
+          const userData = doc.data()
+          const assignedStreamIds = userData.assignedStreams || []
+          
+          if (assignedStreamIds.length === 0) {
+            setAssignedStreams([])
+            setLoading(false)
+            return
+          }
+
+          try {
+            // Fetch stream details for assigned streams
+            const streamPromises = assignedStreamIds.map((streamId: string) => getStreamById(streamId))
+            const streams = await Promise.all(streamPromises)
+            const validStreams = streams.filter((stream): stream is Stream => stream !== null)
+            setAssignedStreams(validStreams)
+          } catch (error) {
+            console.error("Error fetching stream details:", error)
+            toast({
+              title: "Error",
+              description: "Failed to fetch stream details",
+              variant: "destructive",
+            })
+          } finally {
+            setLoading(false)
+          }
+        }
+      },
+      (error) => {
+        console.error("Error listening to profile changes:", error)
+        setLoading(false)
+      }
+    )
+
+    return () => {
+      unsubscribeProfile()
+    }
+  }, [profile?.id, toast])
+
+  // Set up real-time listeners for stream status changes
+  useEffect(() => {
+    if (assignedStreams.length === 0) return
+
+    const unsubscribeStreams = assignedStreams.map((stream) => {
+      return onSnapshot(
+        doc(db, "streams", stream.id),
+        (doc) => {
+          if (doc.exists()) {
+            const updatedStream = { id: doc.id, ...doc.data() } as Stream
+            
+            setAssignedStreams(prevStreams => 
+              prevStreams.map(s => 
+                s.id === stream.id ? updatedStream : s
+              )
+            )
+          }
+        },
+        (error) => {
+          console.error(`Error listening to stream ${stream.id}:`, error)
+        }
+      )
+    })
+
+    return () => {
+      unsubscribeStreams.forEach(unsubscribe => unsubscribe())
+    }
+  }, [assignedStreams.map(s => s.id).join(',')])
 
   const handleJoinStream = (stream: Stream) => {
     if (!stream.isActive) {
