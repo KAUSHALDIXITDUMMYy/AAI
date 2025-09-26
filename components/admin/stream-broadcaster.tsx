@@ -7,21 +7,34 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { AgoraManager, generateAgoraToken } from "@/lib/agora"
 import { updateStream, type Stream } from "@/lib/auth"
-import { Mic, MicOff, Radio, Square, Users, Monitor, MonitorOff } from "lucide-react"
+import { Radio, Square, Users, Monitor, MonitorOff } from "lucide-react"
 
 interface StreamBroadcasterProps {
   stream: Stream
   onStreamUpdate: (stream: Stream) => void
+  isStreaming?: boolean
+  onStreamingChange?: (isStreaming: boolean) => void
 }
 
-export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroadcasterProps) {
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
+export default function StreamBroadcaster({ 
+  stream, 
+  onStreamUpdate, 
+  isStreaming: externalIsStreaming, 
+  onStreamingChange 
+}: StreamBroadcasterProps) {
+  const [isStreaming, setIsStreaming] = useState(externalIsStreaming || false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [connectedUsers, setConnectedUsers] = useState(0)
   const [loading, setLoading] = useState(false)
   const agoraManagerRef = useRef<AgoraManager | null>(null)
   const { toast } = useToast()
+
+  // Sync with external streaming state
+  useEffect(() => {
+    if (externalIsStreaming !== undefined) {
+      setIsStreaming(externalIsStreaming)
+    }
+  }, [externalIsStreaming])
 
   useEffect(() => {
     // Initialize Agora manager
@@ -49,6 +62,7 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
       await updateStream(stream.id, { isActive: true })
 
       setIsStreaming(true)
+      onStreamingChange?.(true)
       toast({
         title: "Streaming started",
         description: `Broadcasting "${stream.title}" live`,
@@ -79,6 +93,7 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
       await updateStream(stream.id, { isActive: false })
 
       setIsStreaming(false)
+      onStreamingChange?.(false)
       setIsScreenSharing(false)
       setConnectedUsers(0)
       toast({
@@ -99,24 +114,6 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
     }
   }
 
-  const toggleMute = async () => {
-    if (!agoraManagerRef.current || !isStreaming) return
-
-    try {
-      await agoraManagerRef.current.setMuted(!isMuted)
-      setIsMuted(!isMuted)
-      toast({
-        title: isMuted ? "Unmuted" : "Muted",
-        description: `Microphone is now ${isMuted ? "unmuted" : "muted"}`,
-      })
-    } catch (error) {
-      toast({
-        title: "Failed to toggle mute",
-        description: "Could not change microphone state",
-        variant: "destructive",
-      })
-    }
-  }
 
   const toggleScreenShare = async () => {
     if (!agoraManagerRef.current || !isStreaming) return
@@ -155,7 +152,7 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
               <Radio className="h-5 w-5" />
               <span>Stream Broadcaster</span>
             </CardTitle>
-            <CardDescription>Control your live audio stream with screen sharing</CardDescription>
+            <CardDescription>Control your live system audio stream with screen sharing</CardDescription>
           </div>
           <Badge variant={isStreaming ? "default" : "secondary"}>{isStreaming ? "Live" : "Offline"}</Badge>
         </div>
@@ -190,8 +187,8 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
             <h3 className="font-medium mb-2">{isStreaming ? "Broadcasting Live" : "Ready to Broadcast"}</h3>
             <p className="text-sm text-gray-600">
               {isStreaming
-                ? "Your audio is being streamed to assigned subscribers"
-                : "Click start to begin broadcasting your audio"}
+                ? "Your system audio is being streamed to assigned subscribers"
+                : "Click start to begin broadcasting your system audio"}
             </p>
             {isScreenSharing && <p className="text-sm text-blue-600 mt-1">Screen sharing active with system audio</p>}
           </div>
@@ -207,9 +204,6 @@ export default function StreamBroadcaster({ stream, onStreamUpdate }: StreamBroa
                 <Button onClick={stopStreaming} disabled={loading} variant="outline" size="lg">
                   <Square className="h-4 w-4 mr-2" />
                   {loading ? "Stopping..." : "Stop Stream"}
-                </Button>
-                <Button onClick={toggleMute} variant="outline" size="lg">
-                  {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </Button>
                 <Button onClick={toggleScreenShare} variant="outline" size="lg">
                   {isScreenSharing ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}

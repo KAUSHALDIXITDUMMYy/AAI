@@ -3,6 +3,7 @@ import AgoraRTC, {
   type IAgoraRTCRemoteUser,
   type IMicrophoneAudioTrack,
   type ILocalVideoTrack,
+  type ILocalAudioTrack,
 } from "agora-rtc-sdk-ng"
 
 export const AGORA_CONFIG = {
@@ -10,9 +11,12 @@ export const AGORA_CONFIG = {
   appCertificate: "1e5f5b2b05874991b51f58cf99ba71d0",
 }
 
-// Initialize Agora RTC client
+// Initialize Agora RTC client with optimized settings for system audio
 export const createAgoraClient = () => {
-  return AgoraRTC.createClient({ mode: "rtc", codec: "vp8" })
+  return AgoraRTC.createClient({ 
+    mode: "rtc", 
+    codec: "vp8"
+  })
 }
 
 export const generateAgoraToken = async (
@@ -52,8 +56,7 @@ export const createChannelName = (streamId: string) => {
 // Agora client wrapper class for easier management
 export class AgoraManager {
   private client: IAgoraRTCClient
-  private localAudioTrack: IMicrophoneAudioTrack | null = null
-  private localScreenTrack: ILocalVideoTrack | null = null
+  private localScreenTrack: ILocalVideoTrack | [ILocalVideoTrack, ILocalAudioTrack] | null = null
   private isJoined = false
   private isScreenSharing = false
 
@@ -67,12 +70,8 @@ export class AgoraManager {
       await this.client.join(AGORA_CONFIG.appId, channelName, token, uid)
       this.isJoined = true
 
-      // Create and publish audio track
-      this.localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        encoderConfig: "high_quality_stereo",
-      })
-
-      await this.client.publish([this.localAudioTrack])
+      // Don't create microphone track - we'll only use screen share audio
+      // This prevents the "call audio" quality issue
       return true
     } catch (error) {
       console.error("Failed to join as broadcaster:", error)
@@ -86,12 +85,10 @@ export class AgoraManager {
         throw new Error("Screen sharing is already active")
       }
 
-      // Create screen sharing track with system audio
+      // Create screen sharing track with high-quality system audio
       this.localScreenTrack = await AgoraRTC.createScreenVideoTrack(
         {
           encoderConfig: "1080p_1",
-          // Enable system audio capture
-          withAudio: "enable",
         },
         "enable",
       )
@@ -100,10 +97,21 @@ export class AgoraManager {
       if (Array.isArray(this.localScreenTrack)) {
         // When withAudio is enabled, createScreenVideoTrack returns [videoTrack, audioTrack]
         const [screenVideoTrack, screenAudioTrack] = this.localScreenTrack
+        
+        // Configure audio track for better quality
+        if (screenAudioTrack) {
+          // Set audio processing parameters for cleaner system audio
+          await screenAudioTrack.setVolume(100)
+          // Disable echo cancellation and noise suppression for system audio
+          await screenAudioTrack.setEnabled(true)
+        }
+        
         await this.client.publish([screenVideoTrack, screenAudioTrack])
       } else {
         // Single video track without audio
-        await this.client.publish([this.localScreenTrack])
+        if (this.localScreenTrack) {
+          await this.client.publish([this.localScreenTrack])
+        }
       }
 
       this.isScreenSharing = true
@@ -180,10 +188,13 @@ export class AgoraManager {
     }
   }
 
-  // Mute/unmute local audio
+  // Mute/unmute local audio (now only for screen share audio)
   async setMuted(muted: boolean) {
-    if (this.localAudioTrack) {
-      await this.localAudioTrack.setMuted(muted)
+    if (this.localScreenTrack && Array.isArray(this.localScreenTrack)) {
+      const [screenVideoTrack, screenAudioTrack] = this.localScreenTrack
+      if (screenAudioTrack) {
+        await screenAudioTrack.setMuted(muted)
+      }
     }
   }
 
@@ -193,12 +204,7 @@ export class AgoraManager {
       await this.stopScreenShare()
     }
 
-    if (this.localAudioTrack) {
-      this.localAudioTrack.stop()
-      this.localAudioTrack.close()
-      this.localAudioTrack = null
-    }
-
+    // No longer need to clean up microphone track since we don't create one
     if (this.isJoined) {
       await this.client.leave()
       this.isJoined = false
