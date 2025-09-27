@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { getAllStreams, getAllSubscribers, updateStream, type Stream, type UserProfile } from "@/lib/auth"
+import { getAllStreams, getAllSubscribers, updateStream, updateStreamAssignments, type Stream, type UserProfile } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Users, Play, Square, CheckCircle, XCircle, Radio } from "lucide-react"
 
@@ -83,9 +83,7 @@ export default function StreamDetailPage() {
     
     setUpdating(true)
     try {
-      await updateStream(streamId, {
-        assignedSubscribers: newSelectedSubscribers
-      })
+      await updateStreamAssignments(streamId, newSelectedSubscribers)
       setStreams(prev => prev.map(stream => 
         stream.id === streamId 
           ? { ...stream, assignedSubscribers: newSelectedSubscribers }
@@ -123,9 +121,7 @@ export default function StreamDetailPage() {
     
     setUpdating(true)
     try {
-      await updateStream(streamId, {
-        assignedSubscribers: allSubscriberIds
-      })
+      await updateStreamAssignments(streamId, allSubscriberIds)
       setStreams(prev => prev.map(stream => 
         stream.id === streamId 
           ? { ...stream, assignedSubscribers: allSubscriberIds }
@@ -161,9 +157,7 @@ export default function StreamDetailPage() {
     
     setUpdating(true)
     try {
-      await updateStream(streamId, {
-        assignedSubscribers: []
-      })
+      await updateStreamAssignments(streamId, [])
       setStreams(prev => prev.map(stream => 
         stream.id === streamId 
           ? { ...stream, assignedSubscribers: [] }

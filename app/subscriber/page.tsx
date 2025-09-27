@@ -6,7 +6,7 @@ import SubscriberLayout from "@/components/subscriber/subscriber-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getStreamById, type Stream } from "@/lib/auth"
+import { getStreamById, getUserProfile, type Stream } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Radio, Clock, Play } from "lucide-react"
@@ -26,17 +26,63 @@ export default function SubscriberDashboard() {
       return
     }
 
-    // Set up real-time listener for user profile changes (new assigned streams)
+    console.log("Subscriber Dashboard - Profile ID:", profile.id)
+    console.log("Subscriber Dashboard - Profile:", profile)
+
+    // Function to load assigned streams
+    const loadAssignedStreams = async () => {
+      try {
+        // Get the latest profile data
+        const latestProfile = await getUserProfile(profile.id)
+        if (!latestProfile) {
+          console.log("Subscriber Dashboard - Profile not found")
+          setAssignedStreams([])
+          setLoading(false)
+          return
+        }
+
+        console.log("Subscriber Dashboard - Latest Profile:", latestProfile)
+        const assignedStreamIds = latestProfile.assignedStreams || []
+        console.log("Subscriber Dashboard - Assigned Stream IDs:", assignedStreamIds)
+        
+        if (assignedStreamIds.length === 0) {
+          setAssignedStreams([])
+          setLoading(false)
+          return
+        }
+
+        // Fetch stream details for assigned streams
+        const streamPromises = assignedStreamIds.map((streamId: string) => getStreamById(streamId))
+        const streams = await Promise.all(streamPromises)
+        const validStreams = streams.filter((stream): stream is Stream => stream !== null)
+        console.log("Subscriber Dashboard - Valid Streams:", validStreams)
+        setAssignedStreams(validStreams)
+      } catch (error) {
+        console.error("Error fetching stream details:", error)
+        toast({
+          title: "Error",
+          description: "Failed to fetch stream details",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // Load streams immediately
+    loadAssignedStreams()
+
+    // Set up real-time listener for user profile changes
     const unsubscribeProfile = onSnapshot(
       doc(db, "users", profile.id),
-      async (doc) => {
-        if (doc.exists()) {
-          const userData = doc.data()
+      async (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const userData = docSnapshot.data()
+          console.log("Subscriber Dashboard - User Data (Real-time):", userData)
           const assignedStreamIds = userData.assignedStreams || []
           
           if (assignedStreamIds.length === 0) {
             setAssignedStreams([])
-            setLoading(false)
             return
           }
 
@@ -45,22 +91,18 @@ export default function SubscriberDashboard() {
             const streamPromises = assignedStreamIds.map((streamId: string) => getStreamById(streamId))
             const streams = await Promise.all(streamPromises)
             const validStreams = streams.filter((stream): stream is Stream => stream !== null)
+            console.log("Subscriber Dashboard - Valid Streams (Real-time):", validStreams)
             setAssignedStreams(validStreams)
           } catch (error) {
-            console.error("Error fetching stream details:", error)
-            toast({
-              title: "Error",
-              description: "Failed to fetch stream details",
-              variant: "destructive",
-            })
-          } finally {
-            setLoading(false)
+            console.error("Error fetching stream details (real-time):", error)
           }
+        } else {
+          console.log("Subscriber Dashboard - User document does not exist (real-time)")
+          setAssignedStreams([])
         }
       },
       (error) => {
         console.error("Error listening to profile changes:", error)
-        setLoading(false)
       }
     )
 

@@ -28,6 +28,8 @@ import {
   updateStream,
   deleteStream,
   assignStreamToSubscribers,
+  syncStreamAssignments,
+  debugSubscriberAssignments,
   type Stream,
   type UserProfile,
 } from "@/lib/auth"
@@ -36,7 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Plus, Edit, Trash2, Users, Radio } from "lucide-react"
 
 // Client-side only Agora functions
-const generateAgoraToken = async (channelName: string, uid: number, role: string) => {
+const generateAgoraToken = async (channelName: string, uid: number, role: "publisher" | "subscriber") => {
   // This will only run on client side
   if (typeof window === 'undefined') return ''
   
@@ -171,6 +173,47 @@ export default function StreamsPage() {
     setDialogOpen(true)
   }
 
+  const handleSyncAssignments = async () => {
+    setSubmitting(true)
+    try {
+      const result = await syncStreamAssignments()
+      toast({
+        title: "Success",
+        description: result.message || "Stream assignments synchronized successfully",
+      })
+      // Refresh data after sync
+      fetchData()
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to sync assignments",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDebugSubscribers = async () => {
+    try {
+      console.log("=== DEBUGGING ALL SUBSCRIBERS ===")
+      for (const subscriber of subscribers) {
+        console.log(`\n--- Debugging Subscriber: ${subscriber.email} (${subscriber.id}) ---`)
+        await debugSubscriberAssignments(subscriber.id)
+      }
+      toast({
+        title: "Debug Complete",
+        description: "Check browser console for debug information",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Debug Error",
+        description: error.message || "Failed to debug subscribers",
+        variant: "destructive",
+      })
+    }
+  }
+
   const openAssignDialog = (stream: Stream) => {
     setSelectedStream(stream)
     setSelectedSubscribers(stream.assignedSubscribers || [])
@@ -224,15 +267,32 @@ export default function StreamsPage() {
             <h2 className="text-2xl font-bold">Streams Management</h2>
             <p className="text-gray-600">Create and manage your audio streams</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={openCreateDialog}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Stream
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
+          <div className="flex space-x-2">
+            <Button 
+              variant="outline" 
+              onClick={handleSyncAssignments}
+              disabled={submitting}
+            >
+              <Users className="h-4 w-4 mr-2" />
+              Sync Assignments
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleDebugSubscribers}
+              disabled={submitting}
+            >
+              <Radio className="h-4 w-4 mr-2" />
+              Debug Subscribers
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={openCreateDialog}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Stream
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
                 <DialogTitle>{editingStream ? "Edit Stream" : "Create New Stream"}</DialogTitle>
                 <DialogDescription>
                   {editingStream ? "Update the stream information" : "Create a new audio stream for subscribers"}
@@ -276,6 +336,7 @@ export default function StreamsPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <Card>

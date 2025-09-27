@@ -229,10 +229,180 @@ export const updateStream = async (streamId: string, updates: Partial<Stream>) =
   }
 }
 
+// Update stream assignments with bidirectional sync
+export const updateStreamAssignments = async (streamId: string, assignedSubscriberIds: string[]) => {
+  try {
+    // First, get the current stream to see previous assignments
+    const currentStream = await getStreamById(streamId)
+    if (!currentStream) {
+      throw new Error("Stream not found")
+    }
+
+    const previousAssignedSubscribers = currentStream.assignedSubscribers || []
+    
+    // Update the stream's assignedSubscribers
+    await updateDoc(doc(db, "streams", streamId), {
+      assignedSubscribers: assignedSubscriberIds
+    })
+
+    // Find subscribers that were removed (no longer assigned)
+    const removedSubscribers = previousAssignedSubscribers.filter(
+      (id: string) => !assignedSubscriberIds.includes(id)
+    )
+
+    // Find subscribers that were added (newly assigned)
+    const addedSubscribers = assignedSubscriberIds.filter(
+      (id: string) => !previousAssignedSubscribers.includes(id)
+    )
+
+    // Update removed subscribers - remove streamId from their assignedStreams
+    const removePromises = removedSubscribers.map(async (subscriberId: string) => {
+      try {
+        const subscriberDoc = await getDoc(doc(db, "users", subscriberId))
+        if (subscriberDoc.exists()) {
+          const subscriberData = subscriberDoc.data()
+          const currentAssignedStreams = subscriberData.assignedStreams || []
+          const updatedAssignedStreams = currentAssignedStreams.filter((id: string) => id !== streamId)
+          
+          await updateDoc(doc(db, "users", subscriberId), {
+            assignedStreams: updatedAssignedStreams
+          })
+        }
+      } catch (error) {
+        console.error(`Error updating removed subscriber ${subscriberId}:`, error)
+      }
+    })
+
+    // Update added subscribers - add streamId to their assignedStreams
+    const addPromises = addedSubscribers.map(async (subscriberId: string) => {
+      try {
+        const subscriberDoc = await getDoc(doc(db, "users", subscriberId))
+        if (subscriberDoc.exists()) {
+          const subscriberData = subscriberDoc.data()
+          const currentAssignedStreams = subscriberData.assignedStreams || []
+          
+          // Only add if not already present
+          if (!currentAssignedStreams.includes(streamId)) {
+            const updatedAssignedStreams = [...currentAssignedStreams, streamId]
+            
+            await updateDoc(doc(db, "users", subscriberId), {
+              assignedStreams: updatedAssignedStreams
+            })
+          }
+        }
+      } catch (error) {
+        console.error(`Error updating added subscriber ${subscriberId}:`, error)
+      }
+    })
+
+    // Execute all updates in parallel
+    await Promise.all([...removePromises, ...addPromises])
+
+  } catch (error) {
+    throw error
+  }
+}
+
 export const deleteStream = async (streamId: string) => {
   try {
     await deleteDoc(doc(db, "streams", streamId))
   } catch (error) {
+    throw error
+  }
+}
+
+// Debug function to check subscriber's assigned streams
+export const debugSubscriberAssignments = async (subscriberId: string) => {
+  try {
+    console.log(`Debugging subscriber ${subscriberId}...`)
+    
+    // Get subscriber data
+    const subscriberDoc = await getDoc(doc(db, "users", subscriberId))
+    if (!subscriberDoc.exists()) {
+      console.log(`Subscriber ${subscriberId} not found`)
+      return { error: "Subscriber not found" }
+    }
+    
+    const subscriberData = subscriberDoc.data()
+    console.log("Subscriber data:", subscriberData)
+    
+    const assignedStreamIds = subscriberData.assignedStreams || []
+    console.log("Assigned stream IDs:", assignedStreamIds)
+    
+    // Check which streams have this subscriber assigned
+    const streams = await getAllStreams()
+    const streamsWithThisSubscriber = streams.filter(stream => 
+      stream.assignedSubscribers?.includes(subscriberId)
+    )
+    
+    console.log("Streams that have this subscriber assigned:", streamsWithThisSubscriber.map(s => s.title))
+    
+    return {
+      subscriberData,
+      assignedStreamIds,
+      streamsWithThisSubscriber: streamsWithThisSubscriber.map(s => ({ id: s.id, title: s.title }))
+    }
+  } catch (error) {
+    console.error("Error debugging subscriber assignments:", error)
+    throw error
+  }
+}
+
+// Sync existing stream assignments - fixes data inconsistency
+export const syncStreamAssignments = async () => {
+  try {
+    console.log("Starting stream assignment sync...")
+    
+    // Get all streams
+    const streams = await getAllStreams()
+    console.log(`Found ${streams.length} streams`)
+    
+    // Get all subscribers
+    const subscribers = await getAllSubscribers()
+    console.log(`Found ${subscribers.length} subscribers`)
+    
+    let totalUpdates = 0
+    
+    // For each stream, update subscriber assignments
+    for (const stream of streams) {
+      const assignedSubscriberIds = stream.assignedSubscribers || []
+      console.log(`Stream "${stream.title}" has ${assignedSubscriberIds.length} assigned subscribers:`, assignedSubscriberIds)
+      
+      // Update each assigned subscriber's assignedStreams array
+      for (const subscriberId of assignedSubscriberIds) {
+        try {
+          const subscriberDoc = await getDoc(doc(db, "users", subscriberId))
+          if (subscriberDoc.exists()) {
+            const subscriberData = subscriberDoc.data()
+            const currentAssignedStreams = subscriberData.assignedStreams || []
+            
+            // Only update if stream is not already in the subscriber's assignedStreams
+            if (!currentAssignedStreams.includes(stream.id)) {
+              const updatedAssignedStreams = [...currentAssignedStreams, stream.id]
+              
+              await updateDoc(doc(db, "users", subscriberId), {
+                assignedStreams: updatedAssignedStreams
+              })
+              
+              console.log(`✅ Updated subscriber ${subscriberId} to include stream "${stream.title}"`)
+              totalUpdates++
+            } else {
+              console.log(`⏭️  Subscriber ${subscriberId} already has stream "${stream.title}"`)
+            }
+          } else {
+            console.log(`❌ Subscriber ${subscriberId} not found`)
+          }
+        } catch (error) {
+          console.error(`❌ Error updating subscriber ${subscriberId}:`, error)
+        }
+      }
+    }
+    
+    console.log(`Stream assignment sync completed. Total updates: ${totalUpdates}`)
+    
+    return { success: true, message: `Stream assignments synchronized successfully. Updated ${totalUpdates} subscribers.` }
+  } catch (error) {
+    console.error("Error syncing stream assignments:", error)
     throw error
   }
 }
