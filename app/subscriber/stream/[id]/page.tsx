@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { getStreamById, type Stream } from "@/lib/auth"
-import { AgoraManager, generateAgoraToken } from "@/lib/agora"
+import { AgoraManager, generateAgoraToken, generateUniqueUID } from "@/lib/agora"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Volume2, VolumeX, Radio, Users } from "lucide-react"
 import { db } from "@/lib/firebase"
@@ -36,7 +36,7 @@ export default function StreamPage() {
     return () => {
       // Cleanup on unmount
       if (agoraManagerRef.current) {
-        agoraManagerRef.current.leave()
+        agoraManagerRef.current.leave().catch(console.error)
       }
     }
   }, [])
@@ -100,8 +100,8 @@ export default function StreamPage() {
     }
 
     try {
-      // Generate unique subscriber ID
-      const subscriberId = Math.floor(Math.random() * 10000) + 1000
+      // Generate unique subscriber ID using the same function as broadcasters
+      const subscriberId = generateUniqueUID()
 
       const token = await generateAgoraToken(stream.channelName, subscriberId, "subscriber")
 
@@ -127,11 +127,22 @@ export default function StreamPage() {
 
       return () => clearInterval(interval)
     } catch (error: any) {
-      toast({
-        title: "Connection failed",
-        description: error.message || "Could not connect to stream",
-        variant: "destructive",
-      })
+      console.error("Subscriber connection error:", error)
+      
+      // Handle specific UID conflict errors
+      if (error.message?.includes("UID_CONFLICT")) {
+        toast({
+          title: "Connection conflict",
+          description: "Another connection is using the same ID. Please try again.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Connection failed",
+          description: error.message || "Could not connect to stream",
+          variant: "destructive",
+        })
+      }
     }
   }
 

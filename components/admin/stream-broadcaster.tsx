@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { AgoraManager, generateAgoraToken } from "@/lib/agora"
+import { AgoraManager, generateAgoraToken, generateUniqueUID } from "@/lib/agora"
 import { updateStream, type Stream } from "@/lib/auth"
 import { Radio, Square, Users, Monitor, MonitorOff } from "lucide-react"
 
@@ -43,7 +43,7 @@ export default function StreamBroadcaster({
     return () => {
       // Cleanup on unmount
       if (agoraManagerRef.current) {
-        agoraManagerRef.current.leave()
+        agoraManagerRef.current.leave().catch(console.error)
       }
     }
   }, [])
@@ -53,10 +53,12 @@ export default function StreamBroadcaster({
 
     setLoading(true)
     try {
-      const token = await generateAgoraToken(stream.channelName, 1, "publisher")
+      // Generate a unique UID for this stream session
+      const uid = generateUniqueUID()
+      const token = await generateAgoraToken(stream.channelName, uid, "publisher")
 
-      // Join as broadcaster
-      await agoraManagerRef.current.joinAsBroadcaster(stream.channelName, token, 1)
+      // Join as broadcaster with unique UID
+      await agoraManagerRef.current.joinAsBroadcaster(stream.channelName, token, uid)
 
       // Update stream status to active
       await updateStream(stream.id, { isActive: true })
@@ -71,11 +73,22 @@ export default function StreamBroadcaster({
       // Update parent component
       onStreamUpdate({ ...stream, isActive: true })
     } catch (error: any) {
-      toast({
-        title: "Failed to start stream",
-        description: error.message || "Could not start broadcasting",
-        variant: "destructive",
-      })
+      console.error("Streaming error:", error)
+      
+      // Handle specific UID conflict errors
+      if (error.message?.includes("UID_CONFLICT")) {
+        toast({
+          title: "Connection conflict",
+          description: "Another stream is using the same connection. Please try again.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Failed to start stream",
+          description: error.message || "Could not start broadcasting",
+          variant: "destructive",
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -104,11 +117,18 @@ export default function StreamBroadcaster({
       // Update parent component
       onStreamUpdate({ ...stream, isActive: false })
     } catch (error: any) {
+      console.error("Stop streaming error:", error)
       toast({
         title: "Failed to stop stream",
         description: error.message || "Could not stop broadcasting",
         variant: "destructive",
       })
+      
+      // Force reset state even if stop fails
+      setIsStreaming(false)
+      onStreamingChange?.(false)
+      setIsScreenSharing(false)
+      setConnectedUsers(0)
     } finally {
       setLoading(false)
     }

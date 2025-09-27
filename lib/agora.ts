@@ -19,6 +19,11 @@ export const createAgoraClient = () => {
   })
 }
 
+// Generate a unique UID for each session
+export const generateUniqueUID = () => {
+  return Math.floor(Math.random() * 100000) + 1000 // Random UID between 1000-100999
+}
+
 export const generateAgoraToken = async (
   channelName: string,
   uid = 0,
@@ -59,16 +64,25 @@ export class AgoraManager {
   private localScreenTrack: ILocalVideoTrack | [ILocalVideoTrack, ILocalAudioTrack] | null = null
   private isJoined = false
   private isScreenSharing = false
+  private currentUID: number | null = null
+  private currentChannelName: string | null = null
 
   constructor() {
     this.client = createAgoraClient()
   }
 
   // Join channel as broadcaster (admin)
-  async joinAsBroadcaster(channelName: string, token: string, uid = 0) {
+  async joinAsBroadcaster(channelName: string, token: string, uid: number) {
     try {
+      // Ensure we're not already joined
+      if (this.isJoined) {
+        await this.leave()
+      }
+
       await this.client.join(AGORA_CONFIG.appId, channelName, token, uid)
       this.isJoined = true
+      this.currentUID = uid
+      this.currentChannelName = channelName
 
       // Don't create microphone track - we'll only use screen share audio
       // This prevents the "call audio" quality issue
@@ -153,10 +167,17 @@ export class AgoraManager {
   }
 
   // Join channel as subscriber (listener)
-  async joinAsSubscriber(channelName: string, token: string, uid = 0) {
+  async joinAsSubscriber(channelName: string, token: string, uid: number) {
     try {
+      // Ensure we're not already joined
+      if (this.isJoined) {
+        await this.leave()
+      }
+
       await this.client.join(AGORA_CONFIG.appId, channelName, token, uid)
       this.isJoined = true
+      this.currentUID = uid
+      this.currentChannelName = channelName
 
       // Set up remote user event handlers
       this.client.on("user-published", this.handleUserPublished.bind(this))
@@ -200,14 +221,26 @@ export class AgoraManager {
 
   // Leave channel and cleanup
   async leave() {
-    if (this.isScreenSharing) {
-      await this.stopScreenShare()
-    }
+    try {
+      if (this.isScreenSharing) {
+        await this.stopScreenShare()
+      }
 
-    // No longer need to clean up microphone track since we don't create one
-    if (this.isJoined) {
-      await this.client.leave()
+      // No longer need to clean up microphone track since we don't create one
+      if (this.isJoined) {
+        await this.client.leave()
+        this.isJoined = false
+      }
+
+      // Reset state
+      this.currentUID = null
+      this.currentChannelName = null
+    } catch (error) {
+      console.error("Error during leave:", error)
+      // Reset state even if leave fails
       this.isJoined = false
+      this.currentUID = null
+      this.currentChannelName = null
     }
   }
 
@@ -219,5 +252,15 @@ export class AgoraManager {
   // Get remote users
   getRemoteUsers() {
     return this.client.remoteUsers
+  }
+
+  // Get current UID
+  getCurrentUID() {
+    return this.currentUID
+  }
+
+  // Get current channel name
+  getCurrentChannelName() {
+    return this.currentChannelName
   }
 }
